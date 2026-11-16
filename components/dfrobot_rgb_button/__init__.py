@@ -368,8 +368,37 @@ CONFIG_SCHEMA = cv.All(
 )
 
 
+_SET_STATUS_ACTION = "dfrobot_rgb_button.set_status"
+
+
+def _find_set_status_actions(node):
+    """Yield the config of every dfrobot_rgb_button.set_status action in the tree."""
+    if isinstance(node, dict):
+        for key, value in node.items():
+            if key == _SET_STATUS_ACTION and isinstance(value, dict):
+                yield value
+            else:
+                yield from _find_set_status_actions(value)
+    elif isinstance(node, list):
+        for item in node:
+            yield from _find_set_status_actions(item)
+
+
 def _final_validate(config: ConfigType) -> ConfigType:
     full_config = fv.full_config.get()
+    # Static status names used in actions must exist on the module they target.
+    names = status_names(config)
+    for action in _find_set_status_actions(dict(full_config)):
+        status = action.get(CONF_STATUS)
+        if (
+            action.get(CONF_ID) == config[CONF_ID]
+            and isinstance(status, str)
+            and status not in names
+        ):
+            raise cv.Invalid(
+                f"{_SET_STATUS_ACTION} uses the unknown status '{status}'. "
+                f"Statuses of '{config[CONF_ID]}': {', '.join(names)}"
+            )
     mode = config[CONF_CONNECTION_STATUS]
     if mode == "api" and "api" not in full_config:
         raise cv.Invalid(
