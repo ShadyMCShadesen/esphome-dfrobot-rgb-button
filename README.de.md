@@ -577,8 +577,8 @@ time:
 **1. I2C-Scan prüfen.** ESPHome scannt den Bus beim Start (`i2c: scan: true` ist Standard):
 
 ```text
-[i2c.idf:102]: Results from bus scan:
-[i2c.idf:108]: Found device at address 0x2A
+[C][i2c.idf]: Results from bus scan:
+[C][i2c.idf]: Found device at address 0x2A
 ```
 
 Kein Gerät gefunden: VCC/GND, vertauschte SDA/SCL und die Pins unter `i2c:` prüfen. Ein Gerät
@@ -589,9 +589,10 @@ umstellen und das Modul stromlos machen.
 Einstellungen aus:
 
 ```text
-[dfrobot_rgb_button:xxx]: DFRobot RGB LED Button (DFR0991):
-[dfrobot_rgb_button:xxx]:   Address: 0x2A
-[dfrobot_rgb_button:xxx]:   Product ID: 0x43DF (OK)
+[C][dfrobot_rgb_button]: DFRobot RGB LED Button (DFR0991):
+[C][dfrobot_rgb_button]:   Address: 0x2A
+[C][dfrobot_rgb_button]:   Product ID: 0x43DF (OK)
+[C][dfrobot_rgb_button]:   Button detection: polling every 20 ms
 ```
 
 **3. Ausführliche Logs einschalten**, um jeden LED-Schreibvorgang und jeden I2C-Fehler zu sehen:
