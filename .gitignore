@@ -1,0 +1,21 @@
+# ESPHome build output
+.esphome/
+.build/
+.pioenvs/
+.piolibdeps/
+
+# Secrets never belong in the repository (tests/secrets.yaml only holds CI dummies)
+secrets.yaml
+!tests/secrets.yaml
+
+# Python
+__pycache__/
+*.py[cod]
+.venv/
+venv/
+.ruff_cache/
+
+# Editors / OS
+.vscode/
+.idea/
+.DS_Store

@@ -1,0 +1,13 @@
+# CI target: rp2040
+packages:
+  example: !include example.yaml
+
+substitutions:
+  sda_pin: GPIO4
+  scl_pin: GPIO5
+  interrupt_pin: GPIO6
+
+esp32: !remove
+
+rp2040:
+  board: rpipicow

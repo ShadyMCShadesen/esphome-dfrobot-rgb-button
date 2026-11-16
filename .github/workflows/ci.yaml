@@ -1,0 +1,148 @@
+name: CI
+
+on:
+  push:
+  pull_request:
+  workflow_dispatch:
+  schedule:
+    # Weekly build against the latest ESPHome release to catch upstream API changes early.
+    - cron: "17 4 * * 1"
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+env:
+  # Oldest ESPHome release the component is tested against (see README, "Compatibility").
+  ESPHOME_MIN_VERSION: "2026.3.0"
+
+jobs:
+  lint:
+    name: Lint
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.13"
+      - name: Install tools
+        run: pip install ruff clang-format==18.1.8
+      - name: ruff check
+        run: ruff check components
+      - name: ruff format
+        run: ruff format --check components
+      - name: clang-format
+        run: |
+          find components tests \( -name '*.h' -o -name '*.cpp' \) -print0 \
+            | xargs -0 clang-format --dry-run --Werror
+
+  config:
+    name: Validate configs (${{ matrix.esphome }})
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        esphome: [latest, minimum]
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.13"
+      - name: Install ESPHome
+        run: |
+          if [ "${{ matrix.esphome }}" = "minimum" ]; then
+            pip install "esphome==${ESPHOME_MIN_VERSION}"
+          else
+            pip install esphome
+          fi
+          esphome version
+      - name: esphome config (all examples, all targets)
+        run: |
+          for target in tests/targets/*.yaml; do
+            for example in examples/*.yaml; do
+              echo "::group::$(basename "$example" .yaml) on $(basename "$target" .yaml)"
+              tests/build.sh "$(basename "$example" .yaml)" "$(basename "$target" .yaml)" config
+              echo "::endgroup::"
+            done
+          done
+
+  simulation:
+    # Runs the component on the host platform against a simulated module (tests/host).
+    # Latest ESPHome only: the host I2C bus this test hooks into does not exist in older releases.
+    name: Simulated module
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.13"
+      - name: Install ESPHome
+        run: |
+          pip install esphome
+          esphome version
+      - name: Build host binary
+        run: esphome compile tests/host/simulation.yaml
+      - name: Run behaviour checks
+        run: |
+          set -o pipefail
+          program="$(find tests/host/.esphome -type f -name program | head -n 1)"
+          timeout 120 "$program" | tee simulation.log
+          grep -a "RESULT:" simulation.log
+
+  compile:
+    name: Compile ${{ matrix.example }} (${{ matrix.target }}, ${{ matrix.esphome }})
+    runs-on: ubuntu-latest
+    needs: [config]
+    strategy:
+      fail-fast: false
+      matrix:
+        target:
+          - esp32-idf
+          - esp32-arduino
+          - esp32-c3
+          - esp32-s2
+          - esp32-s3
+          - esp32-c6
+          - esp8266
+          - rp2040
+        example:
+          - minimal
+          - multi_button
+          - full_featured
+          - interrupt_pin
+        esphome: [latest]
+        include:
+          # The oldest supported release must at least build the largest example.
+          - target: esp32-idf
+            example: full_featured
+            esphome: minimum
+          - target: esp8266
+            example: full_featured
+            esphome: minimum
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.13"
+      - name: Cache toolchains
+        uses: actions/cache@v4
+        with:
+          path: |
+            ~/.platformio
+            ~/.cache/esphome
+          key: toolchain-${{ matrix.target }}-${{ matrix.esphome }}-${{ github.run_id }}
+          restore-keys: |
+            toolchain-${{ matrix.target }}-${{ matrix.esphome }}-
+      - name: Install ESPHome
+        run: |
+          if [ "${{ matrix.esphome }}" = "minimum" ]; then
+            pip install "esphome==${ESPHOME_MIN_VERSION}"
+          else
+            pip install esphome
+          fi
+          esphome version
+      - name: esphome compile
+        run: tests/build.sh "${{ matrix.example }}" "${{ matrix.target }}" compile

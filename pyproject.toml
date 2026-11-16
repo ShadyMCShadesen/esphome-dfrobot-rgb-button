@@ -1,0 +1,21 @@
+# Tooling configuration only - this repository is not a Python package.
+[tool.ruff]
+target-version = "py311"
+line-length = 88
+
+[tool.ruff.lint]
+select = ["E", "F", "W", "I", "UP", "B", "PL", "RET", "SIM"]
+ignore = [
+  "E501",    # line length is handled by the formatter
+  "PLC0415", # deferred imports are required to avoid circular imports in ESPHome
+  "PLR0912", # codegen functions are naturally branchy
+  "PLR0913",
+  "PLR0915",
+  "PLR2004",
+]
+
+[tool.ruff.lint.isort]
+force-sort-within-sections = true
+known-first-party = ["esphome"]
+combine-as-imports = true
+split-on-trailing-comma = false

@@ -1,0 +1,228 @@
+# Every feature of the component in one file. All of it is optional - pick what you need.
+# Button detection uses polling; the INT pin is not wired.
+
+substitutions:
+  sda_pin: GPIO21
+  scl_pin: GPIO22
+
+esphome:
+  name: rgb-button-full
+  friendly_name: RGB Button
+
+esp32:
+  board: esp32dev
+  framework:
+    type: esp-idf
+
+logger:
+
+api:
+  encryption:
+    key: !secret api_encryption_key
+
+ota:
+  - platform: esphome
+    password: !secret ota_password
+
+wifi:
+  ssid: !secret wifi_ssid
+  password: !secret wifi_password
+
+external_components:
+  - source: github://ShadyMCShadesen/esphome-dfrobot-rgb-button@main
+    components: [dfrobot_rgb_button]
+    refresh: 1d
+
+i2c:
+  sda: ${sda_pin}
+  scl: ${scl_pin}
+  frequency: 100kHz
+
+time:
+  - platform: homeassistant
+    on_time:
+      # Time-based night mode.
+      - seconds: 0
+        minutes: 0
+        hours: 22
+        then:
+          - dfrobot_rgb_button.set_max_brightness:
+              id: rgb_button
+              max_brightness: 15%
+      - seconds: 0
+        minutes: 0
+        hours: 7
+        then:
+          - dfrobot_rgb_button.set_max_brightness:
+              id: rgb_button
+              max_brightness: 100%
+
+dfrobot_rgb_button:
+  id: rgb_button
+  address: 0x2A
+
+  # --- button detection (polling) ---
+  update_interval: 20ms
+  debounce: 0ms
+  long_press_time: 800ms
+  double_click_time: 300ms
+
+  # --- LED behaviour ---
+  press_feedback: white # light up white while pressed
+  max_brightness: 100% # initial night-mode limit, see the number entity below
+  gamma_correct: 2.8 # for status / flash / feedback colors
+  color_correct: [100%, 85%, 70%] # white balance: red, green, blue
+  boot_animation: true
+  connection_status: api # show "connecting" until Home Assistant is connected
+  led_refresh_interval: 60s # rewrite the color periodically (survives module power glitches)
+
+  # --- statuses: idle, ok, warning, error, connecting are built in ---
+  statuses:
+    - name: armed
+      color: purple
+      effect: breathe
+      period: 4s
+    - name: error # override a built-in status
+      color:
+        red: 100%
+        green: 0%
+        blue: 10%
+      effect: blink
+      period: 300ms
+
+  # --- software click detection ---
+  on_press:
+    - logger.log: "pressed"
+  on_release:
+    - logger.log:
+        format: "released after %u ms"
+        args: ["(unsigned) duration"]
+  on_click:
+    - logger.log: "single click"
+  on_double_click:
+    - dfrobot_rgb_button.flash:
+        id: rgb_button
+        color: green
+        count: 2
+        duration: 150ms
+  on_long_press:
+    - dfrobot_rgb_button.set_status:
+        id: rgb_button
+        status: idle
+  on_locked_press:
+    - dfrobot_rgb_button.flash:
+        id: rgb_button
+        color: red
+        count: 1
+        duration: 100ms
+  on_disconnect:
+    - logger.log: "module unplugged"
+  on_connect:
+    - logger.log: "module (re)connected"
+
+light:
+  - platform: dfrobot_rgb_button
+    dfrobot_rgb_button_id: rgb_button
+    id: button_led
+    name: "LED"
+    restore_mode: RESTORE_DEFAULT_OFF
+    default_transition_length: 300ms
+    gamma_correct: 2.8
+    toggle_mode: click # the button toggles the LED locally, no Wi-Fi needed
+    auto_off: 10min
+    effects:
+      # Software effects shipped with this component
+      - dfrobot_breathe:
+          name: Breathe
+          period: 3s
+          min_brightness: 10%
+          max_brightness: 100%
+      - dfrobot_color_cycle:
+          name: Color Cycle
+          period: 18s
+      # Standard ESPHome effects work as well
+      - pulse:
+      - strobe:
+      - random:
+
+binary_sensor:
+  - platform: dfrobot_rgb_button
+    dfrobot_rgb_button_id: rgb_button
+    button:
+      name: "Button"
+    connected:
+      name: "Connected"
+
+sensor:
+  - platform: dfrobot_rgb_button
+    dfrobot_rgb_button_id: rgb_button
+    press_count:
+      name: "Press Count"
+      restore: true
+    last_press_duration:
+      name: "Last Press Duration"
+
+text_sensor:
+  - platform: dfrobot_rgb_button
+    dfrobot_rgb_button_id: rgb_button
+    last_click:
+      name: "Last Click"
+
+event:
+  - platform: dfrobot_rgb_button
+    dfrobot_rgb_button_id: rgb_button
+    click:
+      name: "Click"
+
+select:
+  - platform: dfrobot_rgb_button
+    dfrobot_rgb_button_id: rgb_button
+    status:
+      name: "Status"
+    preset:
+      name: "Color Preset"
+      presets:
+        - name: Warm White
+          color: "#FFB45A"
+        - name: Ocean
+          color:
+            red: 0%
+            green: 60%
+            blue: 100%
+        - name: Red
+          color: red
+
+switch:
+  - platform: dfrobot_rgb_button
+    dfrobot_rgb_button_id: rgb_button
+    lock:
+      name: "Button Lock"
+
+number:
+  - platform: dfrobot_rgb_button
+    dfrobot_rgb_button_id: rgb_button
+    max_brightness:
+      name: "Max Brightness"
+
+# Notification from Home Assistant: call the service "esphome.rgb_button_full_notify".
+# (User-defined API actions are named `actions:` in ESPHome.)
+script:
+  - id: notify
+    then:
+      - dfrobot_rgb_button.flash:
+          id: rgb_button
+          color: "#FF8000"
+          count: 5
+          duration: 200ms
+          pause: 200ms
+
+button:
+  - platform: template
+    name: "Test Notification"
+    on_press:
+      - script.execute: notify
+  - platform: template
+    name: "Reset Press Count"
+    entity_category: diagnostic
+    on_press:
+      - dfrobot_rgb_button.reset_press_count: rgb_button

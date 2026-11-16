@@ -1,0 +1,15 @@
+# Mirrors the style used by ESPHome core (Google based, 120 columns).
+Language: Cpp
+BasedOnStyle: Google
+ColumnLimit: 120
+AccessModifierOffset: -1
+AllowShortFunctionsOnASingleLine: All
+AllowShortIfStatementsOnASingleLine: false
+AllowShortLoopsOnASingleLine: false
+DerivePointerAlignment: false
+PointerAlignment: Right
+IncludeBlocks: Preserve
+SortIncludes: false
+SpaceAfterTemplateKeyword: false
+SpacesBeforeTrailingComments: 2
+Standard: Auto

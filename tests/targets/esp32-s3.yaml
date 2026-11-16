@@ -1,0 +1,13 @@
+# CI target: esp32-s3
+packages:
+  example: !include example.yaml
+
+substitutions:
+  sda_pin: GPIO8
+  scl_pin: GPIO9
+  interrupt_pin: GPIO4
+
+esp32:
+  board: esp32-s3-devkitc-1
+  framework:
+    type: arduino

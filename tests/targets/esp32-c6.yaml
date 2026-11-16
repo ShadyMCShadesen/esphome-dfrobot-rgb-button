@@ -1,0 +1,13 @@
+# CI target: esp32-c6
+packages:
+  example: !include example.yaml
+
+substitutions:
+  sda_pin: GPIO6
+  scl_pin: GPIO7
+  interrupt_pin: GPIO4
+
+esp32:
+  board: esp32-c6-devkitc-1
+  framework:
+    type: esp-idf

@@ -1,0 +1,8 @@
+# CI target: esp32-idf
+packages:
+  example: !include example.yaml
+
+esp32:
+  board: esp32dev
+  framework:
+    type: esp-idf

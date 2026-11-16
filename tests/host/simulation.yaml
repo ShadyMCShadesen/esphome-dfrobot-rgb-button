@@ -1,0 +1,290 @@
+# Behaviour test without hardware: runs the component on the ESPHome `host` platform
+# against a simulated module (fake_module.h) and exits non-zero if a check fails.
+#
+#   esphome compile tests/host/simulation.yaml
+#   tests/host/.esphome/build/dfr0991-sim/.pioenvs/dfr0991-sim/program
+#
+# The I2C bus below is never opened successfully (there is no such device); the
+# component is pointed at the simulated module before its setup() runs.
+
+esphome:
+  name: dfr0991-sim
+  includes:
+    - fake_module.h
+  on_boot:
+    - priority: 800
+      then:
+        - lambda: id(btn).set_i2c_bus(&dfr0991_sim::module());
+    - priority: -100
+      then:
+        - script.execute: test_sequence
+
+host:
+
+logger:
+  level: DEBUG
+
+external_components:
+  - source: ../../components
+
+i2c:
+  device: /dev/i2c-dfr0991-sim
+  scan: false
+
+dfrobot_rgb_button:
+  id: btn
+  address: 0x2A
+  on_press:
+    - lambda: dfr0991_sim::counters().press++;
+  on_release:
+    - lambda: dfr0991_sim::counters().release++;
+  on_click:
+    - lambda: dfr0991_sim::counters().click++;
+  on_double_click:
+    - lambda: dfr0991_sim::counters().double_click++;
+  on_long_press:
+    - lambda: dfr0991_sim::counters().long_press++;
+  on_locked_press:
+    - lambda: dfr0991_sim::counters().locked_press++;
+  on_connect:
+    - lambda: dfr0991_sim::counters().connect++;
+  on_disconnect:
+    - lambda: dfr0991_sim::counters().disconnect++;
+
+light:
+  - platform: dfrobot_rgb_button
+    id: led
+    name: LED
+    default_transition_length: 0s
+    restore_mode: ALWAYS_OFF
+    effects:
+      - dfrobot_breathe:
+      - dfrobot_color_cycle:
+
+binary_sensor:
+  - platform: dfrobot_rgb_button
+    button:
+      id: button_state
+      name: Button
+    connected:
+      id: connected_state
+      name: Connected
+
+sensor:
+  - platform: dfrobot_rgb_button
+    press_count:
+      id: press_count
+      name: Press Count
+    last_press_duration:
+      id: last_press_duration
+      name: Last Press Duration
+
+text_sensor:
+  - platform: dfrobot_rgb_button
+    last_click:
+      id: last_click
+      name: Last Click
+
+select:
+  - platform: dfrobot_rgb_button
+    status:
+      id: status_select
+      name: Status
+    preset:
+      id: preset_select
+      name: Preset
+
+switch:
+  - platform: dfrobot_rgb_button
+    lock:
+      id: lock_switch
+      name: Lock
+      restore_mode: ALWAYS_OFF
+
+number:
+  - platform: dfrobot_rgb_button
+    max_brightness:
+      id: max_brightness
+      name: Max Brightness
+      restore_value: false
+
+script:
+  - id: test_sequence
+    then:
+      # --- detection and initial state ---
+      - delay: 300ms
+      - lambda: |-
+          SIM_CHECK(id(btn).is_connected());
+          SIM_CHECK(id(connected_state).state);
+          SIM_CHECK(dfr0991_sim::counters().connect == 1);
+          SIM_CHECK(dfr0991_sim::module().led_is(0, 0, 0));
+
+      # --- light: color reaches the registers ---
+      - light.turn_on:
+          id: led
+          red: 100%
+          green: 0%
+          blue: 0%
+          brightness: 100%
+      - delay: 200ms
+      - lambda: |-
+          SIM_CHECK(dfr0991_sim::module().led_is(255, 0, 0));
+          dfr0991_sim::module().led_writes = 0;
+
+      # --- writes only on change ---
+      - delay: 1s
+      - lambda: SIM_CHECK(dfr0991_sim::module().led_writes == 0);
+
+      # --- single click ---
+      - lambda: dfr0991_sim::module().pressed = true;
+      - delay: 120ms
+      - lambda: |-
+          SIM_CHECK(id(button_state).state);
+          SIM_CHECK(id(btn).is_pressed());
+          dfr0991_sim::module().pressed = false;
+      - delay: 150ms
+      - lambda: |-
+          SIM_CHECK(!id(button_state).state);
+          SIM_CHECK(dfr0991_sim::counters().click == 0);  // still inside the double click window
+      - delay: 400ms
+      - lambda: |-
+          SIM_CHECK(dfr0991_sim::counters().press == 1);
+          SIM_CHECK(dfr0991_sim::counters().release == 1);
+          SIM_CHECK(dfr0991_sim::counters().click == 1);
+          SIM_CHECK(id(last_click).state == "single");
+          SIM_CHECK(id(press_count).state == 1);
+          SIM_CHECK(id(last_press_duration).state >= 80 && id(last_press_duration).state <= 200);
+
+      # --- double click ---
+      - lambda: dfr0991_sim::module().pressed = true;
+      - delay: 100ms
+      - lambda: dfr0991_sim::module().pressed = false;
+      - delay: 100ms
+      - lambda: dfr0991_sim::module().pressed = true;
+      - delay: 100ms
+      - lambda: dfr0991_sim::module().pressed = false;
+      - delay: 500ms
+      - lambda: |-
+          SIM_CHECK(dfr0991_sim::counters().double_click == 1);
+          SIM_CHECK(dfr0991_sim::counters().click == 1);
+          SIM_CHECK(id(last_click).state == "double");
+          SIM_CHECK(id(press_count).state == 3);
+
+      # --- long press fires while still held ---
+      - lambda: dfr0991_sim::module().pressed = true;
+      - delay: 1000ms
+      - lambda: |-
+          SIM_CHECK(dfr0991_sim::counters().long_press == 1);
+          dfr0991_sim::module().pressed = false;
+      - delay: 500ms
+      - lambda: |-
+          SIM_CHECK(dfr0991_sim::counters().click == 1);
+          SIM_CHECK(id(last_click).state == "long");
+
+      # --- flash overlays the light and then returns to it ---
+      - dfrobot_rgb_button.flash:
+          id: btn
+          color: green
+          count: 2
+          duration: 200ms
+      - delay: 100ms
+      - lambda: SIM_CHECK(dfr0991_sim::module().led_is(0, 255, 0));
+      - delay: 200ms
+      - lambda: SIM_CHECK(dfr0991_sim::module().led_is(0, 0, 0));
+      - delay: 200ms
+      - lambda: SIM_CHECK(dfr0991_sim::module().led_is(0, 255, 0));
+      - delay: 400ms
+      - lambda: SIM_CHECK(dfr0991_sim::module().led_is(255, 0, 0));
+
+      # --- status overrides the light, idle restores it ---
+      - dfrobot_rgb_button.set_status:
+          id: btn
+          status: ok
+      - delay: 100ms
+      - lambda: |-
+          SIM_CHECK(dfr0991_sim::module().led_is(0, 255, 0));
+          SIM_CHECK(id(status_select).current_option() == "ok");
+      - select.set:
+          id: status_select
+          option: idle
+      - delay: 100ms
+      - lambda: SIM_CHECK(dfr0991_sim::module().led_is(255, 0, 0));
+      - dfrobot_rgb_button.set_status:
+          id: btn
+          status: ok
+          duration: 300ms
+      - delay: 600ms
+      - lambda: |-
+          SIM_CHECK(dfr0991_sim::module().led_is(255, 0, 0));
+          SIM_CHECK(id(status_select).current_option() == "idle");
+
+      # --- color preset ---
+      - select.set:
+          id: preset_select
+          option: Blue
+      - delay: 100ms
+      - lambda: SIM_CHECK(dfr0991_sim::module().led_is(0, 0, 255));
+
+      # --- night mode: 50 % with gamma 2.8 -> 255 * 0.5^2.8 = 37 ---
+      - number.set:
+          id: max_brightness
+          value: 50
+      - delay: 100ms
+      - lambda: SIM_CHECK(dfr0991_sim::module().led_is(0, 0, 37));
+      - dfrobot_rgb_button.set_max_brightness:
+          id: btn
+          max_brightness: 100%
+      - delay: 100ms
+      - lambda: |-
+          SIM_CHECK(dfr0991_sim::module().led_is(0, 0, 255));
+          SIM_CHECK(id(max_brightness).state == 100);
+
+      # --- child lock ---
+      - switch.turn_on: lock_switch
+      - lambda: dfr0991_sim::module().pressed = true;
+      - delay: 150ms
+      - lambda: |-
+          SIM_CHECK(id(btn).is_locked());
+          SIM_CHECK(!id(button_state).state);
+          SIM_CHECK(dfr0991_sim::counters().locked_press == 1);
+          dfr0991_sim::module().pressed = false;
+      - delay: 500ms
+      - lambda: |-
+          SIM_CHECK(dfr0991_sim::counters().press == 4);
+          SIM_CHECK(dfr0991_sim::counters().click == 1);
+      - dfrobot_rgb_button.unlock: btn
+      - delay: 50ms
+      - lambda: SIM_CHECK(!id(lock_switch).state);
+
+      # --- watchdog: unplug, then hot-plug a module that powered up dark ---
+      - lambda: dfr0991_sim::module().present = false;
+      - delay: 300ms
+      - lambda: |-
+          SIM_CHECK(!id(btn).is_connected());
+          SIM_CHECK(!id(connected_state).state);
+          SIM_CHECK(dfr0991_sim::counters().disconnect == 1);
+          dfr0991_sim::module().power_cycle();
+          dfr0991_sim::module().present = true;
+      - delay: 1500ms
+      - lambda: |-
+          SIM_CHECK(id(btn).is_connected());
+          SIM_CHECK(dfr0991_sim::counters().connect == 2);
+          SIM_CHECK(dfr0991_sim::module().led_is(0, 0, 255));
+
+      # --- effects run and keep the bus usable ---
+      - light.turn_on:
+          id: led
+          effect: Breathe
+      - delay: 800ms
+      - lambda: |-
+          SIM_CHECK(id(btn).is_connected());
+          SIM_CHECK(dfr0991_sim::module().regs[3] != 255 || dfr0991_sim::module().led_writes > 5);
+      - light.turn_off: led
+      - delay: 200ms
+      - lambda: SIM_CHECK(dfr0991_sim::module().led_is(0, 0, 0));
+
+      - lambda: |-
+          auto &c = dfr0991_sim::counters();
+          ESP_LOGI("sim", "RESULT: %d checks, %d failures", c.checks, c.failures);
+          fflush(stdout);
+          exit(c.failures == 0 ? 0 : 1);

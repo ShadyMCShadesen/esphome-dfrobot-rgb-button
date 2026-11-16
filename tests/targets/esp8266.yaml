@@ -1,0 +1,13 @@
+# CI target: esp8266
+packages:
+  example: !include example.yaml
+
+substitutions:
+  sda_pin: GPIO4
+  scl_pin: GPIO5
+  interrupt_pin: GPIO14
+
+esp32: !remove
+
+esp8266:
+  board: d1_mini

@@ -1,0 +1,70 @@
+# Optional variant: button detection via the module's INT pin instead of polling.
+# The INT pin is NOT required - see minimal.yaml for the default polling setup.
+#
+# Wiring (ESP32 DevKit): VCC -> 3V3, GND -> GND, SDA -> GPIO21, SCL -> GPIO22,
+# INT -> GPIO4 (2.54 mm header; the PH2.0-4P connector does not carry INT).
+
+substitutions:
+  sda_pin: GPIO21
+  scl_pin: GPIO22
+  interrupt_pin: GPIO4
+
+esphome:
+  name: rgb-button-interrupt
+  friendly_name: RGB Button Interrupt
+
+esp32:
+  board: esp32dev
+  framework:
+    type: esp-idf
+
+logger:
+
+api:
+  encryption:
+    key: !secret api_encryption_key
+
+ota:
+  - platform: esphome
+    password: !secret ota_password
+
+wifi:
+  ssid: !secret wifi_ssid
+  password: !secret wifi_password
+
+external_components:
+  - source: github://ShadyMCShadesen/esphome-dfrobot-rgb-button@main
+    components: [dfrobot_rgb_button]
+
+i2c:
+  sda: ${sda_pin}
+  scl: ${scl_pin}
+  frequency: 100kHz
+
+dfrobot_rgb_button:
+  id: rgb_button
+  address: 0x2A
+  # INT is high while the button is pressed. The component reacts to both edges,
+  # reads the button register over I2C and falls back to a slow 1 s keep-alive poll.
+  interrupt_pin: ${interrupt_pin}
+  debounce: 10ms # default in interrupt mode
+  press_feedback: white
+  on_click:
+    - light.toggle: button_led
+  on_long_press:
+    - dfrobot_rgb_button.flash:
+        id: rgb_button
+        color: blue
+        count: 2
+
+light:
+  - platform: dfrobot_rgb_button
+    id: button_led
+    name: "LED"
+
+binary_sensor:
+  - platform: dfrobot_rgb_button
+    button:
+      name: "Button"
+    connected:
+      name: "Connected"
